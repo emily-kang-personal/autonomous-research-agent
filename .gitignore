@@ -1,0 +1,4 @@
+queue.db
+*.db-shm
+*.db-wal
+results/
