@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CompanyEnrichment",
+  "type": "object",
+  "required": ["company", "generated_at", "datapoints"],
+  "properties": {
+    "company": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string" },
+    "datapoints": {
+      "type": "object",
+      "required": [
+        "website", "tagline", "pricing_model", "lowest_paid_price_usd",
+        "platforms", "founding_year", "hq_location", "funding_status",
+        "app_store_rating", "last_update_signal",
+        "google_calendar_integration", "target_user"
+      ],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^.*$": {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": { "enum": ["found", "unreachable", "not_disclosed"] },
+            "value": {},
+            "source_url": { "type": "string", "pattern": "^https?://" },
+            "note": { "type": "string" }
+          },
+          "if": { "properties": { "status": { "const": "found" } } },
+          "then": { "required": ["status", "value", "source_url"] }
+        }
+      }
+    }
+  }
+}
