@@ -11,13 +11,14 @@ import json, sys
 REQUIRED_FIELDS = [
     "website", "tagline", "pricing_model", "lowest_paid_price_usd",
     "platforms", "founding_year", "hq_location", "funding_status",
-    "app_store_rating", "last_update_signal",
+    "last_update_signal",
     "google_calendar_integration", "target_user",
+    "total_funding_usd", "founders_background",
 ]
 STATUSES = {"found", "unreachable", "not_disclosed"}
 PRICING_ENUM = {"free", "freemium", "paid_only", "subscription"}
 FUNDING_ENUM = {"bootstrapped", "funded", "acquired", "not_disclosed"}
-PLATFORM_ENUM = {"mac", "ios", "windows", "android", "web"}
+PLATFORM_ENUM = {"mac", "ios", "windows", "android", "web", "linux"}
 
 def fail(msgs):
     for m in msgs:
@@ -60,6 +61,14 @@ for field in REQUIRED_FIELDS:
         src = entry.get("source_url", "")
         if not isinstance(src, str) or not src.startswith(("http://", "https://")):
             errors.append(f"datapoints.{field}: status=found but source_url missing/invalid — a found value without a source is a failed delivery")
+        # evidence_quote: the checkable handle verify.sh string-searches against the page.
+        eq = entry.get("evidence_quote")
+        if not isinstance(eq, str) or not eq.strip():
+            errors.append(f"datapoints.{field}: status=found but no evidence_quote (the exact sentence from the page that states the value)")
+        # retrieved_at: TOOL-stamped (research_fetch fetched_at), never model-written.
+        ra = entry.get("retrieved_at")
+        if not isinstance(ra, str) or not ra.strip():
+            errors.append(f"datapoints.{field}: status=found but no retrieved_at (copy the fetched_at the research_fetch tool returned)")
         v = entry.get("value")
         if field == "pricing_model" and v not in PRICING_ENUM:
             errors.append(f"datapoints.pricing_model.value: '{v}' not in {sorted(PRICING_ENUM)}")
@@ -68,14 +77,17 @@ for field in REQUIRED_FIELDS:
         if field == "platforms":
             if not isinstance(v, list) or not v or not set(v) <= PLATFORM_ENUM:
                 errors.append(f"datapoints.platforms.value: must be non-empty subset of {sorted(PLATFORM_ENUM)}, got {v!r}")
-        if field == "app_store_rating":
-            if not isinstance(v, (int, float)) or not (0 <= v <= 5):
-                errors.append(f"datapoints.app_store_rating.value: must be number 0-5, got {v!r}")
         if field == "founding_year":
             if not isinstance(v, int) or not (1990 <= v <= 2026):
                 errors.append(f"datapoints.founding_year.value: must be integer 1990-2026, got {v!r}")
         if field == "google_calendar_integration" and not isinstance(v, bool):
             errors.append(f"datapoints.google_calendar_integration.value: must be true/false, got {v!r}")
+        if field == "total_funding_usd":
+            if not isinstance(v, (int, float)) or isinstance(v, bool) or v < 0:
+                errors.append(f"datapoints.total_funding_usd.value: must be number >= 0 (USD), got {v!r}")
+        if field == "founders_background":
+            if not isinstance(v, str) or not v.strip() or len(v.split()) > 60:
+                errors.append(f"datapoints.founders_background.value: must be non-empty string <= 60 words, got {v!r}")
 
 unknown = set(dp) - set(REQUIRED_FIELDS)
 if unknown:
