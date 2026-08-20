@@ -1,5 +1,9 @@
 # Company Research Agent
 
+> **💸 ~10–14¢ per company.** One real run — 13 datapoints, every value cited — cost about
+> **9¢** in model usage (DeepSeek V4 Flash) plus **1–5¢** in web-retrieval (11 Firecrawl
+> calls: 4 searches + 7 page reads). Pennies for a fully-sourced company profile.
+
 A research assistant that looks up facts about companies for you — and **always shows
 where it got each answer.**
 
@@ -80,6 +84,41 @@ None of it was guessed. Every line links back to a page you can open and verify.
 
 ---
 
+## How it gets better: the datapoint annotator
+
+An agent like this doesn't improve by magic, and you **can't just auto-generate a quality
+score** — a machine grading a machine misses the failures that matter. To actually make it
+more accurate, a person has to look at real answers and judge them. That's what the
+**annotator** is for.
+
+It's a simple review screen: for each answer the agent produced, you see the value, the
+page it cited, and a check of whether the quote is *really* on that page — then you mark it
+**Pass**, **Fail**, or **Unclear**, pick a failure category if it's wrong, and jot a note.
+Every click is saved immediately to `annotations/annotations.jsonl`.
+
+This powers a simple improvement loop:
+
+1. **Analyze** real answers — read what the agent actually produced.
+2. **Categorize** the mistakes — *which* fields go wrong, and *why* (made-up value? wrong
+   source? gave up too early? genuinely ambiguous question?).
+3. **Improve** by experimenting — change the instructions or the tools, then re-check
+   against the same cases.
+4. **Repeat** — and freeze the checks that catch each fixed problem so it can't come back.
+
+The key idea: we judge **one answer at a time**, not the whole run. Because every answer
+carries its own source, each is a self-contained thing to check — which makes reviewing
+tractable instead of hopeless. (Auto-generated evals skip all of this, which is exactly why
+they don't work for research: the interesting failures only show up when a human reads the
+actual output.)
+
+*A real example:* reviewing the Amie run, most answers passed, but `founding_year` got
+flagged **Unclear** with the note *"What does 'founded' mean — first release, or when the
+company was created?"* That's not the agent being dumb — it's a genuinely ambiguous
+question, and catching it tells us to sharpen the *definition*, not just the agent. That's
+the kind of insight only a human looking at real output can surface.
+
+---
+
 ## Under the hood (for the technically curious)
 
 ### What it's built on
@@ -157,9 +196,33 @@ Profiling one company (~10 minutes) showed the time goes to the agent holding ev
 memory and writing all answers in one big burst at the end — *not* the model or the network.
 So the roadmap targets that directly.
 
+**Cost at scale (per company, ~200 datapoints).** Same formula both times — only the
+input-token count changes, because the optimization stops pages from being re-read on every
+turn:
+
+```
+BEFORE  (holds every page in memory, re-reads it each turn)
+cost = input_tokens × token_rate  +  pages × page_cost
+cost = 5,000,000    × $0.00000022 +  35    × $0.001    ≈  $1.15 / company
+
+AFTER   (records each answer as it's found — context never piles up)
+cost = input_tokens × token_rate  +  pages × page_cost
+cost =   500,000    × $0.00000022 +  35    × $0.001    ≈  $0.15 / company
+```
+
+The only figure that moves is **input_tokens (5M → 500k, ~10×)**. Across the full
+500-company job: **~$575 → ~$75.** (`token_rate` = DeepSeek V4 Flash, $0.22/million input
+tokens; `pages ≈ 35` because datapoints share pages, so it's *not* 200; the two
+`input_tokens` figures are order-of-magnitude estimates extrapolated from the real
+13-datapoint run — trust the ~10× ratio more than the exact dollars.)
+
 ### Efficiency & speed
 - **Record answers one at a time, as they're found** — instead of holding every page in
-  memory and writing one giant result at the end (the single biggest slowdown today).
+  memory and writing one giant result at the end (the single biggest slowdown today —
+  **and the main cost driver at scale**: the bill is dominated by re-reading the piled-up
+  page context on every turn, which grows faster than linearly as the datapoint count
+  rises. Recording as-you-go keeps the cost near its linear floor — roughly a few tens of
+  cents per company at ~200 datapoints — instead of letting it balloon into dollars).
 - **Fill the easy facts for free first** — pull things like headquarters, incorporation, and
   officers from free public registries before spending a web search on them.
 - **Skip re-reading pages** — cache and reuse a page already fetched, instead of fetching it
