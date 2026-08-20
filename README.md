@@ -196,9 +196,33 @@ Profiling one company (~10 minutes) showed the time goes to the agent holding ev
 memory and writing all answers in one big burst at the end — *not* the model or the network.
 So the roadmap targets that directly.
 
+**Cost at scale (per company, ~200 datapoints).** Same formula both times — only the
+input-token count changes, because the optimization stops pages from being re-read on every
+turn:
+
+```
+BEFORE  (holds every page in memory, re-reads it each turn)
+cost = input_tokens × token_rate  +  pages × page_cost
+cost = 5,000,000    × $0.00000022 +  35    × $0.001    ≈  $1.15 / company
+
+AFTER   (records each answer as it's found — context never piles up)
+cost = input_tokens × token_rate  +  pages × page_cost
+cost =   500,000    × $0.00000022 +  35    × $0.001    ≈  $0.15 / company
+```
+
+The only figure that moves is **input_tokens (5M → 500k, ~10×)**. Across the full
+500-company job: **~$575 → ~$75.** (`token_rate` = DeepSeek V4 Flash, $0.22/million input
+tokens; `pages ≈ 35` because datapoints share pages, so it's *not* 200; the two
+`input_tokens` figures are order-of-magnitude estimates extrapolated from the real
+13-datapoint run — trust the ~10× ratio more than the exact dollars.)
+
 ### Efficiency & speed
 - **Record answers one at a time, as they're found** — instead of holding every page in
-  memory and writing one giant result at the end (the single biggest slowdown today).
+  memory and writing one giant result at the end (the single biggest slowdown today —
+  **and the main cost driver at scale**: the bill is dominated by re-reading the piled-up
+  page context on every turn, which grows faster than linearly as the datapoint count
+  rises. Recording as-you-go keeps the cost near its linear floor — roughly a few tens of
+  cents per company at ~200 datapoints — instead of letting it balloon into dollars).
 - **Fill the easy facts for free first** — pull things like headquarters, incorporation, and
   officers from free public registries before spending a web search on them.
 - **Skip re-reading pages** — cache and reuse a page already fetched, instead of fetching it
