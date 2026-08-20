@@ -1,5 +1,9 @@
 # Company Research Agent
 
+> **💸 ~10–14¢ per company.** One real run — 13 datapoints, every value cited — cost about
+> **9¢** in model usage (DeepSeek V4 Flash) plus **1–5¢** in web-retrieval (11 Firecrawl
+> calls: 4 searches + 7 page reads). Pennies for a fully-sourced company profile.
+
 A research assistant that looks up facts about companies for you — and **always shows
 where it got each answer.**
 
