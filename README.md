@@ -77,3 +77,110 @@ None of it was guessed. Every line links back to a page you can open and verify.
 ---
 
 *Built to run on open web sources only — no logins, no paywalls, no private data.*
+
+---
+
+## Under the hood (for the technically curious)
+
+### What it's built on
+
+- **[Hermes](https://hermes-agent.nousresearch.com) (Nous Research)** — the agent runtime.
+  It's the "loop" that lets the model call tools, read the results, and decide what to do
+  next. *Chosen because* it's an open, self-hosted agent framework with first-class tool
+  and plugin support — no dependence on a closed vendor's agent platform.
+- **DeepSeek** (via [OpenRouter](https://openrouter.ai)) — the reasoning model that does the
+  thinking and decides where to look. *Chosen because* it's inexpensive and fast (profiling
+  showed the model isn't the bottleneck), and OpenRouter is a single gateway that makes it
+  easy to swap models without touching the code.
+- **[Firecrawl](https://firecrawl.dev)** — turns the web into clean, readable text: one API
+  for searching the web and one for fetching a page as plain markdown. *Chosen because* it
+  does both search *and* page-reading in one service (fewer moving parts), and it's plumbing
+  that fetches *live public pages* — every answer still traces to a real URL you can open —
+  rather than a data vendor that sells pre-packaged, unverifiable records. It's also far
+  cheaper than building and babysitting a web crawler that dodges anti-bot blocking.
+- **[Exa](https://exa.ai)** — a second search source, wired into the same secure setup.
+  *Chosen because* its neural/semantic search finds relevant pages a keyword search misses,
+  giving the agent a second angle on hard-to-find facts.
+
+### How the agent's keys and traffic are secured (MITM proxy)
+
+The machine running the agent **never holds the real API keys.** All of the agent's web
+traffic is routed through a **man-in-the-middle proxy** — a small credential broker (the
+"Agent Vault") running on a separate, private server. The agent only ever carries
+*placeholder* keys; the broker swaps in the real key at the last moment, on its way out.
+
+```mermaid
+flowchart LR
+    A["🖥️ Agent's machine<br/>holds only<br/>PLACEHOLDER keys"] -->|"request (via proxy)"| B
+    subgraph B["🔐 Credential broker<br/>(private server)"]
+        C["1 Is this host allowed?<br/>(deny by default)"] --> D["2 Swap placeholder<br/>→ real key"]
+    end
+    B -->|"request with real key"| E["🌐 Allowed APIs only<br/>(Firecrawl · OpenRouter · Exa)"]
+    E -->|"result"| B -->|"result"| A
+    A -.->|"any other website"| X["❌ blocked by the broker"]
+```
+
+Two things fall out of this:
+
+1. **The real secrets never sit on the machine doing the risky work** (reading random web
+   pages). If that machine were ever compromised, there are no API keys on it to steal.
+2. **The agent can only reach an approved list of hosts.** Anything not on the list —
+   including the agent trying to "phone home" or reach an unexpected site — is refused by the
+   broker. The allow-list *is* the boundary.
+
+### Security considerations
+
+- **No keys on the agent.** Real credentials live only in the broker's encrypted vault;
+  the agent uses placeholders.
+- **Locked-down egress.** The broker denies every host by default; only the approved APIs
+  get through. The agent can't reach the open internet directly.
+- **No shell for the agent.** Its entire toolkit is: search the web, read a page, read a
+  file, write a file. It cannot run system commands — that's kept in a separate driver
+  script, not given to the model.
+- **Writes are fenced to the project folder.** The agent physically cannot write files
+  anywhere outside this project directory.
+- **Secrets are read-protected.** Credential files (like `.env`) are blocked from being read
+  by the agent's tools.
+- **Public web only.** No logins, no paywalls — it only touches pages anyone can see.
+
+**Honest limitation (current state):** on a normal laptop, the *reading* side isn't fully
+sandboxed at the operating-system level — the strong guarantees above cover the keys, the
+network, and where it can *write*. Full OS-level isolation (running the agent inside a
+locked-down container or on its own dedicated server) is the next hardening step, and the
+setup is already designed for it.
+
+---
+
+# Future improvements
+
+Profiling one company (~10 minutes) showed the time goes to the agent holding every page in
+memory and writing all answers in one big burst at the end — *not* the model or the network.
+So the roadmap targets that directly.
+
+### Efficiency & speed
+- **Record answers one at a time, as they're found** — instead of holding every page in
+  memory and writing one giant result at the end (the single biggest slowdown today).
+- **Fill the easy facts for free first** — pull things like headquarters, incorporation, and
+  officers from free public registries before spending a web search on them.
+- **Skip re-reading pages** — cache and reuse a page already fetched, instead of fetching it
+  again for a different question or a different company.
+- **Use the cheap model for the easy work** — reserve a stronger (pricier) model only for the
+  handful of genuinely hard-to-find facts.
+- **Put the servers closer together** — the credential broker currently adds a round-trip on
+  every request; co-locating it cuts latency.
+
+### Parallelization & scale
+- **Research many companies at once** — instead of one at a time, run a pool of workers in
+  parallel (the difference between hours and minutes across a big list).
+- **Read several pages at once per company** — fetch a company's sources concurrently rather
+  than one after another.
+- **Swap the local file store for a real database** — move from SQLite to PostgreSQL so many
+  workers can safely write at the same time (required for the parallel version).
+
+### Quality & features
+- **Independent fact-checker pass** — a second, separate check that re-opens each cited page
+  and confirms the quote is really there (catches any answer whose source doesn't back it up).
+- **Chat with it** — ask questions or kick off new research conversationally, not just as a
+  batch job.
+- **Force the answer format at the source** — constrain the output shape so results are always
+  well-formed, removing the "fix-and-retry" step.
