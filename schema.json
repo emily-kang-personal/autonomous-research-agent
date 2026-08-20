@@ -11,8 +11,9 @@
       "required": [
         "website", "tagline", "pricing_model", "lowest_paid_price_usd",
         "platforms", "founding_year", "hq_location", "funding_status",
-        "app_store_rating", "last_update_signal",
-        "google_calendar_integration", "target_user"
+        "last_update_signal",
+        "google_calendar_integration", "target_user",
+        "total_funding_usd", "founders_background"
       ],
       "additionalProperties": false,
       "patternProperties": {
@@ -23,10 +24,12 @@
             "status": { "enum": ["found", "unreachable", "not_disclosed"] },
             "value": {},
             "source_url": { "type": "string", "pattern": "^https?://" },
+            "evidence_quote": { "type": "string", "minLength": 1 },
+            "retrieved_at": { "type": "string", "minLength": 1 },
             "note": { "type": "string" }
           },
           "if": { "properties": { "status": { "const": "found" } } },
-          "then": { "required": ["status", "value", "source_url"] }
+          "then": { "required": ["status", "value", "source_url", "evidence_quote", "retrieved_at"] }
         }
       }
     }
